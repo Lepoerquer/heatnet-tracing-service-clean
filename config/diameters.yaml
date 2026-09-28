@@ -1,0 +1,25 @@
+# Сгенерировано скриптом из «Техническое приложение.docx» и сверено построчно
+# с «Техническое-приложение.pdf» (обе редакции совпадают, 18 строк).
+# Не редактировать вручную без повторной сверки с первоисточником.
+# Табл. 4.1: условный диаметр, пропускная способность (т/ч), предельная длина (м),
+# стоимость 1 м нового строительства и реконструкции (руб./м).
+source: "Техническое приложение, табл. 4.1"
+diameters:
+  - { dn:   50, capacity_tph:     3.5, max_length_m:   181, new_cost_rub_m:  74023, reconstruction_cost_rub_m:  96180 }
+  - { dn:   65, capacity_tph:     8.3, max_length_m:   245, new_cost_rub_m:  78631, reconstruction_cost_rub_m: 109989 }
+  - { dn:   80, capacity_tph:    13.2, max_length_m:   327, new_cost_rub_m:  83530, reconstruction_cost_rub_m: 117582 }
+  - { dn:  100, capacity_tph:    22.3, max_length_m:   419, new_cost_rub_m:  89748, reconstruction_cost_rub_m: 133694 }
+  - { dn:  125, capacity_tph:    40.2, max_length_m:   554, new_cost_rub_m:  97275, reconstruction_cost_rub_m: 148030 }
+  - { dn:  150, capacity_tph:    65.1, max_length_m:   696, new_cost_rub_m: 105507, reconstruction_cost_rub_m: 152295 }
+  - { dn:  200, capacity_tph:   152.3, max_length_m:  1042, new_cost_rub_m: 120275, reconstruction_cost_rub_m: 181766 }
+  - { dn:  250, capacity_tph:   274.9, max_length_m:  1379, new_cost_rub_m: 135323, reconstruction_cost_rub_m: 202030 }
+  - { dn:  300, capacity_tph:   437.4, max_length_m:  1718, new_cost_rub_m: 150022, reconstruction_cost_rub_m: 228707 }
+  - { dn:  400, capacity_tph:   943.1, max_length_m:  2477, new_cost_rub_m: 190299, reconstruction_cost_rub_m: 271317 }
+  - { dn:  500, capacity_tph:  1663.4, max_length_m:  3245, new_cost_rub_m: 224137, reconstruction_cost_rub_m: 333884 }
+  - { dn:  600, capacity_tph:  2627.7, max_length_m:  4037, new_cost_rub_m: 264790, reconstruction_cost_rub_m: 372703 }
+  - { dn:  700, capacity_tph:  3735.1, max_length_m:  4775, new_cost_rub_m: 324298, reconstruction_cost_rub_m: 439571 }
+  - { dn:  800, capacity_tph:  5296.8, max_length_m:  5644, new_cost_rub_m: 325996, reconstruction_cost_rub_m: 489918 }
+  - { dn:  900, capacity_tph:  7165.0, max_length_m:  6518, new_cost_rub_m: 327693, reconstruction_cost_rub_m: 553607 }
+  - { dn: 1000, capacity_tph:  9391.8, max_length_m:  7419, new_cost_rub_m: 418777, reconstruction_cost_rub_m: 606679 }
+  - { dn: 1200, capacity_tph: 15012.8, max_length_m:  9288, new_cost_rub_m: 428074, reconstruction_cost_rub_m: 825692 }
+  - { dn: 1400, capacity_tph: 22501.9, max_length_m: 11276, new_cost_rub_m: 683417, reconstruction_cost_rub_m: 978584 }

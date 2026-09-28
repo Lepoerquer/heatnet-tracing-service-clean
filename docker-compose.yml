@@ -1,0 +1,58 @@
+version: "3.8"
+
+# M0: postgres (PostGIS) + backend. Запуск:
+#   docker-compose up --build
+# На стенде — docker-compose 1.29.2 (V1, через дефис).
+
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_DB: heatnet
+      POSTGRES_USER: heatnet
+      POSTGRES_PASSWORD: heatnet
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./docker/postgres/init-postgis.sql:/docker-entrypoint-initdb.d/01-postgis.sql:ro
+    mem_limit: 4g
+    healthcheck:
+      # TCP 127.0.0.1: pg_isready на сокете срабатывает раньше, чем PostGIS init закончит
+      test: ["CMD-SHELL", "pg_isready -U heatnet -d heatnet -h 127.0.0.1 -p 5432"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 120s
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      HEATNET_CONFIG_DIR: /app/config
+      HEATNET_DATA_DIR: /app/data
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/heatnet
+      SPRING_DATASOURCE_USERNAME: heatnet
+      SPRING_DATASOURCE_PASSWORD: heatnet
+      JAVA_OPTS: "-Xms512m -Xmx6g"
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config:/app/config:ro
+      - ./data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    mem_limit: 10g
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/actuator/health | grep -q '\"status\":\"UP\"'"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 120s
+
+volumes:
+  postgres-data:

@@ -1,0 +1,25 @@
+# Сгенерировано скриптом из «Техническое приложение.docx» и сверено построчно
+# с «Техническое-приложение.pdf» (обе редакции совпадают, 18 строк).
+# Не редактировать вручную без повторной сверки с первоисточником.
+# Табл. 4.2: наружный диаметр оболочки, просвет между оболочками,
+# расчётная ширина пары труб (= 2·D + просвет) и расчётная высота (= D), м.
+source: "Техническое приложение, табл. 4.2"
+gabarits:
+  - { dn:   50, outer_diameter_m: 0.125, gap_m: 0.150, width_m: 0.400, height_m: 0.125 }
+  - { dn:   65, outer_diameter_m: 0.140, gap_m: 0.150, width_m: 0.430, height_m: 0.140 }
+  - { dn:   80, outer_diameter_m: 0.160, gap_m: 0.150, width_m: 0.470, height_m: 0.160 }
+  - { dn:  100, outer_diameter_m: 0.180, gap_m: 0.150, width_m: 0.510, height_m: 0.180 }
+  - { dn:  125, outer_diameter_m: 0.225, gap_m: 0.150, width_m: 0.600, height_m: 0.225 }
+  - { dn:  150, outer_diameter_m: 0.250, gap_m: 0.150, width_m: 0.650, height_m: 0.250 }
+  - { dn:  200, outer_diameter_m: 0.315, gap_m: 0.250, width_m: 0.880, height_m: 0.315 }
+  - { dn:  250, outer_diameter_m: 0.400, gap_m: 0.250, width_m: 1.050, height_m: 0.400 }
+  - { dn:  300, outer_diameter_m: 0.450, gap_m: 0.250, width_m: 1.150, height_m: 0.450 }
+  - { dn:  400, outer_diameter_m: 0.560, gap_m: 0.250, width_m: 1.370, height_m: 0.560 }
+  - { dn:  500, outer_diameter_m: 0.710, gap_m: 0.250, width_m: 1.670, height_m: 0.710 }
+  - { dn:  600, outer_diameter_m: 0.800, gap_m: 0.250, width_m: 1.850, height_m: 0.800 }
+  - { dn:  700, outer_diameter_m: 0.900, gap_m: 0.250, width_m: 2.050, height_m: 0.900 }
+  - { dn:  800, outer_diameter_m: 1.000, gap_m: 0.250, width_m: 2.250, height_m: 1.000 }
+  - { dn:  900, outer_diameter_m: 1.100, gap_m: 0.250, width_m: 2.450, height_m: 1.100 }
+  - { dn: 1000, outer_diameter_m: 1.200, gap_m: 0.250, width_m: 2.650, height_m: 1.200 }
+  - { dn: 1200, outer_diameter_m: 1.425, gap_m: 0.250, width_m: 3.100, height_m: 1.425 }
+  - { dn: 1400, outer_diameter_m: 1.600, gap_m: 0.250, width_m: 3.450, height_m: 1.600 }

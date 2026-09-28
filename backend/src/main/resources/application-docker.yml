@@ -1,0 +1,27 @@
+# Профиль docker-compose: Postgres 16 + PostGIS (M0 smoke, JPA без entity до M1)
+spring:
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://postgres:5432/heatnet}
+    username: ${SPRING_DATASOURCE_USERNAME:heatnet}
+    password: ${SPRING_DATASOURCE_PASSWORD:heatnet}
+    hikari:
+      connection-timeout: 30000
+      # Повтор подключения при старте, если postgres ещё поднимается после init PostGIS
+      initialization-fail-timeout: 60000
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+  jpa:
+    open-in-view: false
+    database-platform: org.hibernate.dialect.PostgreSQL10Dialect
+    hibernate:
+      ddl-auto: none
+    properties:
+      hibernate:
+        jdbc:
+          lob:
+            non_contextual_creation: true
+
+logging:
+  level:
+    ru.heatnet: INFO

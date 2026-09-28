@@ -1,0 +1,71 @@
+# =============================================================================
+# heatnet-tracing-service — .gitignore
+# Локальное vs репозиторий: scripts/run-*.ps1, deploy.sh, CI — В репо.
+# =============================================================================
+
+# --- Локальная документация команды (не в git) ---
+role-1-teamlead/
+role-2-backend/
+gitfuncs/
+.cursorrules
+
+# --- Cursor IDE ---
+.cursor/
+
+# --- Скрипты: только установка docker-compose V1 (exe качается отдельно) ---
+scripts/install-docker-compose.bat
+scripts/install-docker-compose.ps1
+
+# --- Бинарники / установщики (не коммитить) ---
+docker-compose-Windows-x86_64.exe
+docker-compose.exe
+*.exe
+*.msi
+wsl*.msi
+
+# --- Runtime-данные (загрузки пользователя, jobs; .gitkeep и эталонные выгрузки - в репо) ---
+data/**
+!data/.gitkeep
+!data/result.geojson
+!data/result_vA.geojson
+!data/result_vB.geojson
+!data/result_vC.geojson
+!data/m11-sample.geojson
+!data/m11-sample_vA.geojson
+!data/m11-sample_vB.geojson
+!data/m11-sample_vC.geojson
+
+# --- Docker: локальные переопределения ---
+docker-compose.override.yml
+
+# --- Сборка и зависимости ---
+backend/target/
+frontend/node_modules/
+frontend/dist/
+
+# --- Секреты и IDE ---
+.env
+.env.*
+.env.local
+.idea/
+.vscode/
+*.iml
+
+# --- Логи и временные файлы ---
+*.log
+logs/
+tmp/
+*.tmp
+pdf_text.txt
+docx_text.txt
+
+# --- Python (prototype/) ---
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# --- OS ---
+Thumbs.db
+Desktop.ini
+.DS_Store

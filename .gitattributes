@@ -1,0 +1,2 @@
+# Ubuntu читает shebang как имя программы. CR в конце строки даёт «bash\r».
+*.sh text eol=lf

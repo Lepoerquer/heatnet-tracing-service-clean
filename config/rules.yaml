@@ -1,0 +1,136 @@
+# Правила ограничений, стоимости и ранжирования.
+# Источники: Техническое приложение, табл. 5.1, разд. 8.2, 8.3, 9;
+# протокол встречи 16.09.2026 (п. 5, 7, 8, 9). Пометка "team_default" — дефолт команды,
+# не подтверждённый организаторами (см. docs/clarifications.md).
+source: "Техническое приложение, табл. 5.1, разд. 8–9; протокол 16.09.2026"
+
+# ---------------------------------------------------------------- табл. 5.1
+# rule: prohibited — пересечение запрещено, обход с отступом min_offset_m;
+# rule: special    — допускается специальный проход с коэффициентом k_spec.
+# special_zone.kind: polygon_margin — полигон объекта + margin_m с каждой стороны;
+#                    point_margin   — по margin_m с каждой стороны от точки пересечения.
+restrictions:
+  oks_existing:
+    rule: prohibited
+    min_offset_by_dn:            # отступ зависит от DN новой сети
+      - { dn_from: 50,  dn_to: 400,  offset_m: 5.0 }   # менее 500 мм
+      - { dn_from: 500, dn_to: 800,  offset_m: 7.0 }   # 500–800 мм
+      - { dn_from: 900, dn_to: 1400, offset_m: 9.0 }   # 900 мм и более
+  park:
+    rule: prohibited
+    min_offset_m: 1.0
+  social_area:
+    rule: prohibited
+    min_offset_m: 1.0
+  prohibited_site:
+    rule: prohibited
+    min_offset_m: 1.0
+  water:
+    rule: prohibited
+    min_offset_m: 1.0
+  railway:                       # 19.09.2026: официально добавлен в обновлённую табл. 2
+                                  # Технического приложения — "пересечение запрещено", 1,0 м.
+                                  # Больше не team_default (было в старой табл. 5.1 отсутствие
+                                  # правила + team_default: true, см. clarifications.md №9).
+    rule: prohibited
+    min_offset_m: 1.0
+  road:
+    rule: special
+    min_offset_m: 1.5
+    min_crossing_angle_deg: 45
+    k_spec: 1.60
+    special_zone: { kind: polygon_margin, margin_m: 3.0 }
+  tram_tracks:
+    rule: special
+    min_offset_m: 1.5
+    min_crossing_angle_deg: 45
+    k_spec: 1.75
+    special_zone: { kind: polygon_margin, margin_m: 3.0 }
+  gas_pipeline:
+    rule: special
+    min_offset_m: 2.0
+    k_spec: 1.25
+    special_zone: { kind: point_margin, margin_m: 2.0 }
+  power_cable:
+    rule: special
+    min_offset_m: 2.0
+    k_spec: 1.15
+    special_zone: { kind: point_margin, margin_m: 2.0 }
+  heat_network:                  # независимое пересечение без врезки
+    rule: special
+    min_offset_m: 1.0
+    k_spec: 1.05
+    special_zone: { kind: point_margin, margin_m: 2.0 }
+
+# Протокол п. 9: при наложении зон — один спецучасток и максимальный K, без перемножения.
+overlap:
+  k_spec_mode: max
+  prohibited_has_priority: true  # team_default, clarifications №2
+
+# ------------------------------------------------------ протокол п. 9 (углы)
+# ⚠️ 19.09.2026: обновлённое Техническое приложение §2.1 прямо отменяет это правило —
+# "Допускается произвольный угол поворота до 90° включительно. Отдельное удорожание
+# поворота не применяется." K_угол никогда не был ни в одном PDF, только в устном протоколе
+# 16.09; теперь письменно опровергнут. См. clarifications.md №12, 05-tor-update-audit-2026-09-19.md.
+# 20.09: в коде k_angle = 1.0, turn_penalty_m — эвристика поиска (§2.1 / ДИТ), не строка сметы.
+angle:
+  k_angle: 1.0
+  standard_angles_deg: [0, 45, 90, 135, 180]
+  angle_tolerance_deg: 5         # team_default, clarifications №12
+
+# ----------------------------------------------------- разд. 3, 8.2, протокол п. 7–8
+network:
+  tie_in_chamber_radius_m: 10.0  # врезка в существующую камеру, если она не далее 10 м
+  max_segments_per_chamber: 4    # 1 к источнику + не более 3 прочих
+  # 19.09 §2.3: «следующий минимальный ДУ, удовлетворяющий обоим условиям» — потолка +1 нет.
+  # Поле оставлено для совместимости конфига; LengthLimitValidator его больше не применяет как потолок.
+  length_limit_max_dn_steps: 1
+
+geometry:
+  tolerance_m: 0.01              # протокол п. 9: 4,999 → 5 м
+
+# ---------------------------------------------------------- M3 маршрутизация
+routing:
+  workspace_margin_m: 200.0      # запас BBox вокруг from/to и врезок
+  vertex_outward_m: 0.05         # +5 см наружу от углов буферов
+  vertex_simplify_m: 0.005       # Douglas-Peucker << vertex_outward_m (не 1 м)
+  turn_penalty_m: 10.0           # штраф поиска за поворот (не строка сметы C)
+  grid_cell_m: 2.0               # fallback A* по сетке для плотных зон
+  grid_fallback_min_vertices: 8000
+  vg_deadline_ms: 12000
+  grid_deadline_ms: 25000
+  route_budget_ms: 20000
+  crossing_budget_ms: 15000
+  cluster_prefix_m: 20.0         # общий префикс маршрутов для кластера M4
+  joint_group_m: 250.0           # ОКС ближе этого расстояния пробуют общую врезку
+  tie_in_attempts: 2             # сколько разных точек сети пробовать, если маршрут NOT_FOUND
+  start_exit_max_m: 12.0         # выход из буфера здания/дороги у врезки (DN≤1400 ~10,5 м); не сквозь квартал
+
+# ------------------------------------------------------------ разд. 8.2–8.3 / §3.2 (19.09)
+# ⚠️ 19.09.2026: обновлённое приложение §3.2 — "Стоимость новой камеры включает присоединение
+# к существующей сети. Отдельная стоимость врезки при строительстве новой камеры не
+# добавляется." Значит tie_in_rub применяется ТОЛЬКО при врезке в СУЩЕСТВУЮЩУЮ камеру
+# (без строительства новой); для новой камеры (врезка в трубу) — только chamber_scale, без
+# доплаты tie_in_rub. 20.09: VariantCostCalculator начисляет tie_in_rub только при
+# ExistingObjectType.HEAT_CHAMBER (F23 закрыт). Реконструкция считается внутри M5/M6,
+# но не входит в C/L/S. "Разъяснения", вопрос №14.
+costs:
+  tie_in_rub: 5000000            # только врезка в СУЩЕСТВУЮЩУЮ камеру (см. предупреждение выше)
+  chamber_scale:                 # новая камера — по наибольшему DN, без доплаты tie_in_rub
+    - { dn_from: 50,   dn_to: 200,  cost_rub: 3000000 }
+    - { dn_from: 250,  dn_to: 500,  cost_rub: 5000000 }
+    - { dn_from: 600,  dn_to: 1000, cost_rub: 8000000 }
+    - { dn_from: 1200, dn_to: 1400, cost_rub: 12000000 }
+  unconnected_penalty:           # Ш = 100 000 000 + 500 000 · G
+    fixed_rub: 100000000
+    per_tph_rub: 500000
+
+# ------------------------------------------------------------------ разд. 9
+# S = weight_cost · (C / base_cost_rub) + weight_length · (L / base_length_m)
+ranking:
+  weight_cost: 0.7
+  weight_length: 0.3
+  base_cost_rub: 25000000
+  base_length_m: 100
+  score_scale: 4                 # пример §7.3 печатает score = 0.6913 (4 знака)
+  max_variants: 3
