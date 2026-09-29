@@ -61,7 +61,7 @@ public class VariantGenerator {
      * variant_summary. Остальные стратегии — «лучше три варианта, чем один», но не ценой
      * job'а, который не укладывается в разумное время ответа (см. ТЗ 3.2: до 50 пользователей).
      */
-    static final long ADDITIONAL_STRATEGIES_BUDGET_MS = 240_000L;
+    static final long ADDITIONAL_STRATEGIES_BUDGET_MS = 900_000L;
 
     /**
      * AUDIT-12 (Claude, 24.09): бюджет уточняющих проходов по ДУ графа (см. {@link #refineRoutingDn}). Отдельный от

@@ -44,9 +44,8 @@ import ru.heatnet.rules.model.SpecialSection;
  *
  * <p>AUDIT-24.09 (Claude) — переработка по актуальному приложению и Разъяснениям:</p>
  * <ul>
- *   <li>§2.2 / Разъяснение №3: заход в свой полигон — один прямой отрезок от ближайшей
- *       (доступной) границы до точки ({@link OwnEntryCandidates}); раньше допускался заход
- *       через любую стену с запасом «до стены + 18 м» (фактически до 24 м сквозь корпус);</li>
+ *   <li>§2.2 / Разъяснение №3: заход в свой полигон — один прямой отрезок по нормали к стене,
+ *       ближайшей к точке подключения ({@link OwnEntryCandidates});</li>
  *   <li>§2.1 / Разъяснение №5: поворот ≤ 90° и в камере ответвления — для семян на уже
  *       построенной сети задаётся направление питающего участка;</li>
  *   <li>§2.4 / Разъяснение №11: точка на трубе ближе 10 м к существующей камере, к которой можно
@@ -352,6 +351,7 @@ final class SteinerPlanner {
         RestrictionRule rule = reference.getRules().getRestrictions().get("oks_existing");
         double clearance = (rule == null ? 5.0 : rule.minOffsetM(dn))
                 + reference.getGabarits().spec(dn).getWidthM() / 2.0;
+        target.clearanceM = clearance;
         target.entries.addAll(cachedEntries(ingest, oks.getId(), dn,
                 () -> OwnEntryCandidates.compute(p, own, clearance, dn, fullEngine, approach.getEngine(), gf)));
         int max = 0;
@@ -1173,9 +1173,8 @@ final class SteinerPlanner {
      * возвращается к снимку. Доводка не меняет ни топологию дерева, ни точки ответвления — только геометрию ветки,
      * поэтому расходы, ДУ и камеры (M5/M6) сохраняют смысл, а стоимость варианта может только уменьшиться.</p>
      *
-     * <p>Пример — ОКС 2 конкурсного набора: ближайшая стена смотрит во двор Г-образного корпуса; жадный шаг вёл
-     * ветку петлёй-«пятиугольником» 78 м через единственный луч, касающийся угла ниши, хотя через ту же стену под
-     * углом 6,5° заход длиннее всего на 0,25 м, а ветка короче на 15 м.</p>
+     * <p>Финальный отрезок остаётся перпендикуляром к стене, ближайшей к точке подключения. Спрямление
+     * излома, которое уводит этот отрезок с нормали и проводит его вплотную к другой грани, отвергается.</p>
      *
      * @return число улучшенных веток
      */
@@ -2001,6 +2000,12 @@ final class SteinerPlanner {
         } catch (RuntimeException ex) {
             blocked = true;
         }
+        if (!blocked && t.own != null && t.clearanceM > 0
+                && !OwnEntryCandidates.straightPerpendicularApproach(q, t.p, t.own, t.clearanceM, gf)) {
+            // Спрямление «почти прямого» излома уводило финальный отрезок с нормали ближайшей стены
+            // и проводило его в сантиметрах от другой грани того же здания.
+            blocked = true;
+        }
         double[] value = {blocked ? 1.0 : 0.0, blocked ? Double.NaN : insideLength(leg, t), leg.getLength()};
         t.legMemo.put(key, value);
         return value;
@@ -2209,6 +2214,8 @@ final class SteinerPlanner {
         private int attachedLevel = -1;
         /** AUDIT-13: заходы через ту же ближайшую стену для доводки ({@link OwnEntryCandidates#computeRelaxed}). */
         private List<OwnEntryCandidates.Entry> relaxed;
+        /** Отступ до своего полигона до финального перпендикуляра (отступ ОКС по ДУ + полуширина пары), м. */
+        private double clearanceM;
         /** Финальная прямая лучшего захода (+3 м наружу) — чужие трассы её не пересекают, пока ОКС ждёт. */
         private LineString reserved;
         /** AUDIT-13: подготовленный свой полигон для быстрой проверки «звено не заходит в здание». */

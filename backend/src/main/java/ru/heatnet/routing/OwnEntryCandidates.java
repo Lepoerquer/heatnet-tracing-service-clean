@@ -24,26 +24,19 @@ import ru.heatnet.rules.SpatialConstraintEngine;
  * трасса приходит в точку Q на этом луче за пределами зоны отступа своего полигона и оттуда
  * одним прямым отрезком Q→B→P идёт к точке. Длина участка внутри здания равна |PB|.</p>
  *
- * <p>Кандидаты упорядочены по |PB|. Уровень 0 — ближайшая граница (с допуском 0,5 м); если заход
- * с неё невозможен (граница смотрит во внутренний двор/нишу уже зоны отступа, заход упирается
- * в соседнее здание и т.п.), следующие уровни — ближайшие из ДОСТУПНЫХ стен. Планировщик
- * повышает уровень только тогда, когда на текущем уровне маршрут не найден, — так соблюдается
- * смысл правила «ближайшая граница», а ОКС с глухой ближайшей стеной не остаётся без подключения
- * из-за формы здания (организаторы гарантируют подключаемость всех ОКС).</p>
+ * <p>Стена — грань полигона, ближайшая к точке подключения P (не ближайшая точка границы: угол
+ * контура точкой не является). Заход — один прямой отрезок по нормали к этой стене. Если по нормали
+ * выйти нельзя (нормаль снова входит в своё здание, упирается в другое ограничение или на подходе
+ * проходит вплотную к другой части того же контура), берётся следующая по расстоянию от P стена.
+ * Планировщик повышает уровень только когда на текущем уровне маршрут не найден.</p>
  *
- * <p>AUDIT-13 (Claude, 25.09): {@link #computeRelaxed} — кандидаты для доводки готовой ветки
- * ({@code SteinerPlanner.polishLeaves}): заход через ТУ ЖЕ ближайшую доступную стену (звено границы на том же
- * расстоянии от P, ±{@value #SAME_WALL_TOLERANCE_M} м) не глубже max(ближайшая доступная + 0,2 м; расстояние до
- * границы + {@value #RELAXED_EXCESS_M} м), с мелкой выборкой стены (0,25 м) и без склейки лучей через ~10°.
- * §2.2 требует захода «от ближайшей к точке границы полигона», а не строго перпендикулярного: жёсткое окно
- * +0,2 м и склейка соседних лучей оставляли у ОКС 2 конкурсного набора единственный луч, касающийся угла
- * ниши, — и петлю-«пятиугольник» 78 м вместо 62,5 м (вариант A), 159 м вместо 110 м (вариант B).</p>
+ * <p>{@link #computeRelaxed} оставляет ту же ближайшую доступную стену и ту же нормаль: несколько точек Q
+ * вдоль неё задают, где трасса выходит на перпендикуляр, но не наклоняют финальный отрезок.</p>
  */
 public final class OwnEntryCandidates {
 
     /** Окна уровней: превышение |PB| над минимально достижимым, м. */
     public static final double[] LEVEL_WINDOWS = {0.2, 1.0, 3.0, 6.0, 12.0, 25.0, Double.POSITIVE_INFINITY};
-    private static final double SAMPLE_STEP_M = 1.0;
     private static final double RAY_STEP_M = 0.25;
     private static final double RAY_MAX_M = 60.0;
     private static final double ON_BOUNDARY_M = 0.05;
@@ -52,8 +45,19 @@ public final class OwnEntryCandidates {
     public static final double RELAXED_EXCESS_M = 1.0;
     /** «Та же стена»: звено границы на расстоянии от P не больше, чем у лучшей доступной стены + допуск, м. */
     public static final double SAME_WALL_TOLERANCE_M = 0.2;
-    private static final double NEAR_SAMPLE_STEP_M = 0.25;
-    private static final double NEAR_WALL_M = 3.0;
+    /** Короче этого слитый фасад — шум оцифровки, не стена. */
+    private static final double MIN_FACADE_M = 0.6;
+    /** Почти коллинеарные звенья одного фасада: угол до 12°. */
+    private static final double FACADE_ANGLE_COS = 0.9781;
+    /** Боковой увод звена от линии фасада, м. */
+    private static final double FACADE_LATERAL_M = 0.45;
+    /** Насколько финальный отрезок может отклониться от нормали стены, °. */
+    private static final double PERP_MAX_OFF_DEG = 10.0;
+    /**
+     * Подъём расстояния до своего полигона, пока трасса ещё в зоне отступа и снаружи:
+     * прямой отрезок прошёл вплотную к другой части контура и снова от него отошёл.
+     */
+    private static final double GRAZE_RISE_M = 0.8;
     private static final double FINE_DEDUPE_BOUNDARY_M = 0.3;
     private static final double FINE_DEDUPE_COS = 0.9994;
     private static final int FINE_MAX_KEPT = 45;
@@ -95,8 +99,7 @@ public final class OwnEntryCandidates {
     }
 
     /**
-     * AUDIT-13 (Claude, 25.09). Заходы через ту же ближайшую доступную стену для доводки ветки (см. описание класса):
-     * все с уровнем 0, упорядочены по |PB|.
+     * Та же ближайшая к точке подключения стена и та же нормаль, несколько точек Q вдоль неё. Все с уровнем 0.
      */
     public static List<Entry> computeRelaxed(Coordinate p, Geometry own, double clearanceM, int dn,
                                              SpatialConstraintEngine fullEngine, SpatialConstraintEngine approach,
@@ -118,21 +121,19 @@ public final class OwnEntryCandidates {
         }
         Geometry boundary = own.getBoundary();
         Shape shape = new Shape(own);
-        org.locationtech.jts.geom.Envelope env = own.getEnvelopeInternal();
 
-        // 1. Геометрические кандидаты: направления на точки границы содержащей части.
+        // 1. Нормали к стенам: основание перпендикуляра из P на фасад. Косой луч к углу контура
+        // стеной не считается — он и давал ход в миллиметрах вдоль другой грани.
         List<Raw> raws = new ArrayList<>();
         double dmin = pp.distance(boundary);
         if (dmin <= ON_BOUNDARY_M) {
-            // Точка на самой границе: внутри здания трасса не идёт (|PB| = 0), заход — по наружной
-            // нормали к ближайшему звену и веером до ±80°.
             raws.addAll(boundaryFan(p, own, boundary, gf));
         } else {
             for (int r = 0; r <= part.getNumInteriorRing(); r++) {
                 LineString ring = r == 0 ? part.getExteriorRing() : part.getInteriorRingN(r - 1);
-                for (Coordinate s : sampleRing(ring, p, relaxed ? dmin : -1.0)) {
-                    Raw raw = rayEntry(p, s, shape);
-                    if (raw != null) {
+                for (Coordinate foot : facadeFeet(ring, p)) {
+                    Raw raw = rayEntry(p, foot, shape);
+                    if (raw != null && Math.abs(raw.insideM - raw.wallDist) <= 0.45) {
                         raws.add(raw);
                     }
                 }
@@ -259,6 +260,9 @@ public final class OwnEntryCandidates {
                     continue;
                 }
                 if (approach.isSegmentBlocked(leg, dn)) {
+                    continue;
+                }
+                if (!approachOk(q, p, shape, clearanceM, gf)) {
                     continue;
                 }
             } catch (RuntimeException ex) {
@@ -437,7 +441,7 @@ public final class OwnEntryCandidates {
             nx = -nx;
             ny = -ny;
         }
-        double[] fan = {0, 20, -20, 40, -40, 60, -60, 80, -80};
+        double[] fan = {0};
         for (double deg : fan) {
             double a = Math.toRadians(deg);
             double ux = nx * Math.cos(a) - ny * Math.sin(a);
@@ -451,33 +455,210 @@ public final class OwnEntryCandidates {
     }
 
     /**
-     * @param fineNearM если &gt; 0: у стен не дальше {@code fineNearM + 3 м} от P — выборка через 0,25 м (угловой шаг
-     *                  лучей ~2–3° вместо ~10°; AUDIT-13, доводка); иначе — через 1 м, как раньше
+     * Прямой заход Q→P: по нормали к стене, через которую он входит, и без сближения с другой частью
+     * своего контура ближе зоны отступа. Косой отрезок и «миллиметры от угла» — нет.
      */
-    private static List<Coordinate> sampleRing(LineString ring, Coordinate p, double fineNearM) {
-        List<Coordinate> out = new ArrayList<>();
+    public static boolean straightPerpendicularApproach(Coordinate q, Coordinate p, Geometry own,
+                                                        double clearanceM, GeometryFactory gf) {
+        if (q == null || p == null || own == null || own.isEmpty() || q.distance(p) < 0.05) {
+            return true;
+        }
+        return approachOk(q, p, new Shape(own), clearanceM, gf);
+    }
+
+    /**
+     * Основания перпендикуляров из P на фасады кольца. Фасад — цепочка почти коллинеарных звеньев;
+     * угол контура (проекция вне отрезка) не даёт захода.
+     */
+    private static List<Coordinate> facadeFeet(LineString ring, Coordinate p) {
+        List<Coordinate> feet = new ArrayList<>();
         Coordinate[] cs = ring.getCoordinates();
-        for (int i = 0; i + 1 < cs.length; i++) {
-            Coordinate a = cs[i];
-            Coordinate b = cs[i + 1];
-            double len = a.distance(b);
-            double step = fineNearM > 0
-                    && segmentDistance(p, new double[] {a.x, a.y, b.x, b.y}) <= fineNearM + NEAR_WALL_M
-                    ? NEAR_SAMPLE_STEP_M : SAMPLE_STEP_M;
-            out.add(new Coordinate(a));
-            // ближайшая точка звена к P (перпендикуляр)
-            if (len > 1e-9) {
-                double t = ((p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y)) / (len * len);
-                if (t > 0 && t < 1) {
-                    out.add(new Coordinate(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t));
-                }
+        int m = cs.length - 1;
+        int i = 0;
+        while (i < m) {
+            double dx = cs[i + 1].x - cs[i].x;
+            double dy = cs[i + 1].y - cs[i].y;
+            double len0 = Math.hypot(dx, dy);
+            if (len0 < 1e-6) {
+                i++;
+                continue;
             }
-            for (double d = step; d < len; d += step) {
-                double t = d / len;
-                out.add(new Coordinate(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t));
+            double ux = dx / len0;
+            double uy = dy / len0;
+            double chain = len0;
+            int j = i + 1;
+            while (j < m) {
+                double ex = cs[j + 1].x - cs[j].x;
+                double ey = cs[j + 1].y - cs[j].y;
+                double el = Math.hypot(ex, ey);
+                if (el < 1e-6) {
+                    j++;
+                    continue;
+                }
+                double dot = Math.abs(ux * (ex / el) + uy * (ey / el));
+                double lat = Math.abs((cs[j + 1].x - cs[i].x) * -uy + (cs[j + 1].y - cs[i].y) * ux);
+                if (dot < FACADE_ANGLE_COS || lat > FACADE_LATERAL_M) {
+                    break;
+                }
+                chain += el;
+                j++;
+            }
+            if (chain >= MIN_FACADE_M) {
+                Coordinate foot = closestInteriorFoot(p, cs, i, j);
+                if (foot != null) {
+                    feet.add(foot);
+                }
+                i = j;
+            } else {
+                i++;
             }
         }
-        return out;
+        return feet;
+    }
+
+    /** Ближайшая к P точка на звеньях {@code [from, to)}, если перпендикуляр попадает в звено, а не в угол. */
+    private static Coordinate closestInteriorFoot(Coordinate p, Coordinate[] cs, int from, int to) {
+        Coordinate best = null;
+        double bestD = Double.POSITIVE_INFINITY;
+        for (int k = from; k < to; k++) {
+            Coordinate a = cs[k];
+            Coordinate b = cs[k + 1];
+            double ex = b.x - a.x;
+            double ey = b.y - a.y;
+            double len2 = ex * ex + ey * ey;
+            if (len2 < 1e-12) {
+                continue;
+            }
+            double len = Math.sqrt(len2);
+            double t = ((p.x - a.x) * ex + (p.y - a.y) * ey) / len2;
+            double along = t * len;
+            if (along <= 0.05 || along >= len - 0.05) {
+                continue;
+            }
+            double fx = a.x + ex * t;
+            double fy = a.y + ey * t;
+            double d = Math.hypot(p.x - fx, p.y - fy);
+            if (d < bestD) {
+                bestD = d;
+                best = new Coordinate(fx, fy);
+            }
+        }
+        return best;
+    }
+
+    private static boolean approachOk(Coordinate q, Coordinate p, Shape shape, double clearanceM, GeometryFactory gf) {
+        if (grazes(q, p, shape, clearanceM, gf)) {
+            return false;
+        }
+        Hit hit = firstEntry(q, p, shape, gf);
+        if (hit == null) {
+            return true;
+        }
+        double dx = p.x - q.x;
+        double dy = p.y - q.y;
+        double len = Math.hypot(dx, dy);
+        if (len < 1e-6) {
+            return true;
+        }
+        double ux = dx / len;
+        double uy = dy / len;
+        boolean saw = false;
+        for (double[] e : shape.edges) {
+            if (segmentDistance(hit.point, e) > 0.08) {
+                continue;
+            }
+            saw = true;
+            if (perpendicularToEdge(ux, uy, e)) {
+                return true;
+            }
+        }
+        return !saw && perpendicularToEdge(ux, uy, hit.edge);
+    }
+
+    /** true, если снаружи, ещё в зоне отступа, расстояние до контура заметно вырастает — обход чужого угла. */
+    private static boolean grazes(Coordinate q, Coordinate p, Shape shape, double clearanceM, GeometryFactory gf) {
+        double dx = p.x - q.x;
+        double dy = p.y - q.y;
+        double len = Math.hypot(dx, dy);
+        if (len < 0.05) {
+            return false;
+        }
+        double ux = dx / len;
+        double uy = dy / len;
+        Double prev = null;
+        for (double t = 0; t <= len; t += 0.25) {
+            Coordinate x = new Coordinate(q.x + ux * t, q.y + uy * t);
+            Point pt = gf.createPoint(x);
+            if (shape.prepared.covers(pt)) {
+                break;
+            }
+            double d = shape.distance.distance(pt);
+            if (prev != null && d < clearanceM && prev < clearanceM && d > prev + GRAZE_RISE_M) {
+                return true;
+            }
+            prev = d;
+        }
+        return false;
+    }
+
+    /** Первое пересечение отрезка Q→P с контуром, после которого точка уже внутри полигона. */
+    private static Hit firstEntry(Coordinate q, Coordinate p, Shape shape, GeometryFactory gf) {
+        double dx = p.x - q.x;
+        double dy = p.y - q.y;
+        double len = Math.hypot(dx, dy);
+        if (len < 1e-6) {
+            return null;
+        }
+        List<Hit> hits = new ArrayList<>();
+        for (double[] e : shape.edges) {
+            double ex = e[2] - e[0];
+            double ey = e[3] - e[1];
+            double denom = dx * ey - dy * ex;
+            if (Math.abs(denom) < 1e-12) {
+                continue;
+            }
+            double wx = e[0] - q.x;
+            double wy = e[1] - q.y;
+            double s = (wx * ey - wy * ex) / denom;
+            double v = (wx * dy - wy * dx) / denom;
+            if (s <= 1e-4 || s >= 1.0 - 1e-6 || v < -1e-8 || v > 1.0 + 1e-8) {
+                continue;
+            }
+            hits.add(new Hit(new Coordinate(q.x + dx * s, q.y + dy * s), e, s));
+        }
+        hits.sort(Comparator.comparingDouble(h -> h.s));
+        double ahead = Math.min(0.2, len * 0.25);
+        for (Hit hit : hits) {
+            Coordinate after = new Coordinate(hit.point.x + dx / len * ahead, hit.point.y + dy / len * ahead);
+            if (shape.prepared.covers(gf.createPoint(after))) {
+                return hit;
+            }
+        }
+        return hits.isEmpty() ? null : hits.get(0);
+    }
+
+    /** Угол отрезка к звену не дальше {@link #PERP_MAX_OFF_DEG} от прямого. */
+    private static boolean perpendicularToEdge(double ux, double uy, double[] e) {
+        double ex = e[2] - e[0];
+        double ey = e[3] - e[1];
+        double el = Math.hypot(ex, ey);
+        if (el < 1e-9) {
+            return false;
+        }
+        double dot = Math.abs(ux * ex / el + uy * ey / el);
+        return dot <= Math.cos(Math.toRadians(90.0 - PERP_MAX_OFF_DEG));
+    }
+
+    private static final class Hit {
+        final Coordinate point;
+        final double[] edge;
+        final double s;
+
+        Hit(Coordinate point, double[] edge, double s) {
+            this.point = point;
+            this.edge = edge;
+            this.s = s;
+        }
     }
 
     private static Polygon containingPart(Geometry own, Point p) {

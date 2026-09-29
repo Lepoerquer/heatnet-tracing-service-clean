@@ -227,11 +227,11 @@ public class NetworkPlanner {
                 } catch (RuntimeException ex) {
                     pulled = line;
                 }
-                if (pulled == line || pulled.getNumPoints() == line.getNumPoints()) {
+                if (pulled == line || sameCoordinates(pulled, line)) {
                     segments.add(segment);
                     continue;
                 }
-                removed += line.getNumPoints() - pulled.getNumPoints();
+                removed += Math.max(0, line.getNumPoints() - pulled.getNumPoints());
                 all.remove(line);
                 all.add(pulled);
                 b.getLayout().putSegment(segment.getId(), pulled);
@@ -283,40 +283,140 @@ public class NetworkPlanner {
                         || TurnRepairAccess.deviation(a, c, pts.get(k + 2)) > 90.0 + 1e-6) {
                     continue;
                 }
-                if (k == 1 && TurnRepairAccess.deviation(a, pts.get(1), c) >= 2.0) {
+                double kink = TurnRepairAccess.deviation(a, pts.get(k), c);
+                if (k == 1 && kink >= 2.0) {
                     continue; // первое звено — только для мелкого излома (< 2°), крупные повороты оставляет планировщик
                 }
+                org.locationtech.jts.geom.Coordinate touch = k == 1 ? a : null;
                 org.locationtech.jts.geom.LineString shortcut = line.getFactory().createLineString(
                         new org.locationtech.jts.geom.Coordinate[] {new org.locationtech.jts.geom.Coordinate(a),
                                 new org.locationtech.jts.geom.Coordinate(c)});
-                if (engine.isSegmentBlocked(shortcut, dn) || !engine.extractSpecialSections(shortcut, dn).isEmpty()) {
-                    continue;
+                if (shortcutClear(shortcut, dn, engine, all, line, touch)) {
+                    pts.remove(k);
+                    any = true;
+                    progress = true;
+                    break;
                 }
-                boolean crosses = false;
-                org.locationtech.jts.geom.Coordinate touch = k == 1 ? a : null;
-                for (org.locationtech.jts.geom.LineString other : all) {
-                    if (other == line) {
-                        continue;
-                    }
-                    if (touch == null ? shortcut.intersects(other) : crossesAwayFrom(shortcut, other, touch)) {
-                        crosses = true;
-                        break;
-                    }
-                    if (ru.heatnet.routing.NewNetworkClearance.tooClose(shortcut, other, touch, null)) {
-                        crosses = true;
-                        break;
-                    }
+                // Хорда a–c задевает буфер, а вершина обходит его угол (проход к дому 15, около 8°).
+                // Прямая, сдвинутая к этому углу на 15–50 см, отступ держит и излом убирает.
+                if (kink <= SMALL_KINK_DEG && flattenKink(pts, k, before, dn, engine, all, line, touch)) {
+                    any = true;
+                    progress = true;
+                    break;
                 }
-                if (crosses) {
-                    continue;
-                }
-                pts.remove(k);
-                any = true;
-                progress = true;
-                break;
             }
         }
         return any ? line.getFactory().createLineString(pts.toArray(new org.locationtech.jts.geom.Coordinate[0])) : line;
+    }
+
+    /** Мелкий излом, который ещё имеет смысл притянуть к прямой, °. Крупный обход угла не трогаем. */
+    private static final double SMALL_KINK_DEG = 15.0;
+
+    private boolean shortcutClear(org.locationtech.jts.geom.LineString shortcut, int dn,
+                                  ru.heatnet.rules.SpatialConstraintEngine engine,
+                                  List<org.locationtech.jts.geom.LineString> all,
+                                  org.locationtech.jts.geom.LineString own,
+                                  org.locationtech.jts.geom.Coordinate touch) {
+        if (engine.isSegmentBlocked(shortcut, dn) || !engine.extractSpecialSections(shortcut, dn).isEmpty()) {
+            return false;
+        }
+        for (org.locationtech.jts.geom.LineString other : all) {
+            if (other == own) {
+                continue;
+            }
+            if (touch == null ? shortcut.intersects(other) : crossesAwayFrom(shortcut, other, touch)) {
+                return false;
+            }
+            if (ru.heatnet.routing.NewNetworkClearance.tooClose(shortcut, other, touch, null)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Убирает вершину излома: хорда соседних точек сдвигается в сторону излома на минимальное
+     * расстояние, при котором отступ ещё соблюдён. Концы участка не двигаются.
+     */
+    private boolean flattenKink(List<org.locationtech.jts.geom.Coordinate> pts, int k,
+                                org.locationtech.jts.geom.Coordinate before, int dn,
+                                ru.heatnet.rules.SpatialConstraintEngine engine,
+                                List<org.locationtech.jts.geom.LineString> all,
+                                org.locationtech.jts.geom.LineString own,
+                                org.locationtech.jts.geom.Coordinate touch) {
+        org.locationtech.jts.geom.Coordinate a = pts.get(k - 1);
+        org.locationtech.jts.geom.Coordinate kink = pts.get(k);
+        org.locationtech.jts.geom.Coordinate c = pts.get(k + 1);
+        org.locationtech.jts.geom.Coordinate foot = footOnChord(kink, a, c);
+        if (foot == null) {
+            return false;
+        }
+        double bow = kink.distance(foot);
+        if (bow < 0.25) {
+            return false;
+        }
+        double nx = (kink.x - foot.x) / bow;
+        double ny = (kink.y - foot.y) / bow;
+        org.locationtech.jts.geom.Coordinate after = pts.get(k + 2);
+        org.locationtech.jts.geom.Coordinate incoming = before != null ? before : a;
+        for (double shift : new double[] {0.2, 0.35, 0.5, 0.8, 1.2}) {
+            if (shift >= bow - 0.05) {
+                break;
+            }
+            org.locationtech.jts.geom.Coordinate left = new org.locationtech.jts.geom.Coordinate(a.x + nx * shift, a.y + ny * shift);
+            org.locationtech.jts.geom.Coordinate right = new org.locationtech.jts.geom.Coordinate(c.x + nx * shift, c.y + ny * shift);
+            if (TurnRepairAccess.deviation(incoming, left, right) > 90.0 + 1e-6
+                    || TurnRepairAccess.deviation(left, right, after) > 90.0 + 1e-6) {
+                continue;
+            }
+            org.locationtech.jts.geom.Coordinate startTouch = k == 2 ? incoming : touch;
+            if (!shortcutClear(own.getFactory().createLineString(new org.locationtech.jts.geom.Coordinate[] {incoming, left}),
+                    dn, engine, all, own, startTouch)) {
+                continue;
+            }
+            if (!shortcutClear(own.getFactory().createLineString(new org.locationtech.jts.geom.Coordinate[] {left, right}),
+                    dn, engine, all, own, touch)) {
+                continue;
+            }
+            if (!shortcutClear(own.getFactory().createLineString(new org.locationtech.jts.geom.Coordinate[] {right, after}),
+                    dn, engine, all, own, touch)) {
+                continue;
+            }
+            pts.set(k - 1, left);
+            pts.set(k + 1, right);
+            pts.remove(k);
+            return true;
+        }
+        return false;
+    }
+
+    private static org.locationtech.jts.geom.Coordinate footOnChord(org.locationtech.jts.geom.Coordinate kink,
+                                                                    org.locationtech.jts.geom.Coordinate a,
+                                                                    org.locationtech.jts.geom.Coordinate c) {
+        double dx = c.x - a.x;
+        double dy = c.y - a.y;
+        double len2 = dx * dx + dy * dy;
+        if (len2 < 1e-4) {
+            return null;
+        }
+        double t = ((kink.x - a.x) * dx + (kink.y - a.y) * dy) / len2;
+        if (t <= 0.05 || t >= 0.95) {
+            return null;
+        }
+        return new org.locationtech.jts.geom.Coordinate(a.x + t * dx, a.y + t * dy);
+    }
+
+    private static boolean sameCoordinates(org.locationtech.jts.geom.LineString a,
+                                           org.locationtech.jts.geom.LineString b) {
+        if (a.getNumPoints() != b.getNumPoints()) {
+            return false;
+        }
+        for (int i = 0; i < a.getNumPoints(); i++) {
+            if (a.getCoordinateN(i).distance(b.getCoordinateN(i)) > 1e-6) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /** Пересечение {@code a} и {@code b} где-либо, кроме окрестности общего узла {@code node} (1,05 м). */

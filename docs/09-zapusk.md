@@ -339,6 +339,6 @@ data/
 
 Конкурсный вход: 144 объекта. Ответ загрузки содержит `totalFeatures`, `errorCount`, `warningCount`. `errorCount` больше нуля значит, что часть объектов не вошла в модель; на штатном `dataset_updated.geojson` ошибок схемы нет.
 
-Сводка лучшего варианта на плоском снимке 26.09.2026: `variant_id` = `vA`, `score` = 13.1055, 17 точек подключены, `unconnected_oks_ids` пуст.
+Сводка лучшего варианта на плоском снимке `dataset/dataset_updated.geojson`: `variant_id` = `vA`, `score` = 12.8418, 17 точек подключены, `unconnected_oks_ids` пуст.
 
 Юнит-тесты к запуску контейнера не относятся. Их гоняют на JDK 11 отдельно: `mvn -f backend/pom.xml test` (273 теста на снимке 26.09.2026) и `mvn -f backend/pom.xml test -Pcontest-full`. Профиль `contest-full` перезаписывает `data/result.geojson`. Скачанную выгрузку перед ним лучше скопировать в сторону.
