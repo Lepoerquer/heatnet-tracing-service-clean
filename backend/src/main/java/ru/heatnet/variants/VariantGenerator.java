@@ -56,19 +56,11 @@ public class VariantGenerator {
     private static final Logger log = LoggerFactory.getLogger(VariantGenerator.class);
 
     /**
-     * Общий бюджет на попытки ДОПОЛНИТЕЛЬНЫХ (не первой) стратегий M7. {@code JOINT_ALL}
-     * пытается всегда — это основной вариант, без него выходной файл останется без единой
-     * variant_summary. Остальные стратегии — «лучше три варианта, чем один», но не ценой
-     * job'а, который не укладывается в разумное время ответа (см. ТЗ 3.2: до 50 пользователей).
+     * AUDIT-12 (Claude, 24.09): бюджет уточняющих проходов по ДУ графа (см. {@link #refineRoutingDn}).
+     * Сначала строятся первые планы всех стратегий, затем уточняются — начиная с лучшего по S.
+     * Проход, начатый до исчерпания бюджета, доводится до конца. Сами три стратегии этим бюджетом не отменяются.
      */
-    static final long ADDITIONAL_STRATEGIES_BUDGET_MS = 900_000L;
-
-    /**
-     * AUDIT-12 (Claude, 24.09): бюджет уточняющих проходов по ДУ графа (см. {@link #refineRoutingDn}). Отдельный от
-     * бюджета стратегий: сначала строятся первые планы всех стратегий (три варианта важнее), затем уточняются —
-     * начиная с лучшего по S. Проход, начатый до исчерпания бюджета, доводится до конца.
-     */
-    static final long ROUTING_DN_REFINEMENT_BUDGET_MS = 240_000L;
+    static final long ROUTING_DN_REFINEMENT_BUDGET_MS = 900_000L;
 
     /** AUDIT-13: различие суммарного отступления от ближайшей стены ОКС (§2.2), которое считается значимым, м. */
     static final double ENTRY_EXCESS_MARGIN_M = 0.5;
@@ -115,20 +107,11 @@ public class VariantGenerator {
 
         List<GeneratedVariant> built = new ArrayList<>();
         List<GeneratedVariant> withViolations = new ArrayList<>();
-        long budgetDeadline = System.nanoTime() + ADDITIONAL_STRATEGIES_BUDGET_MS * 1_000_000L;
-        boolean first = true;
         for (VariantStrategy strategy : strategies) {
             if (strategy != VariantStrategy.JOINT_ALL && oksPoints.size() < 2) {
                 diagnostics.add("стратегия " + strategy.getCode() + " пропущена: один ОКС — варианты совпадут");
                 continue;
             }
-            if (!first && System.nanoTime() > budgetDeadline) {
-                diagnostics.add(String.format(Locale.ROOT,
-                        "стратегия %s пропущена: исчерпан общий бюджет доп. стратегий (%d мс)",
-                        strategy.getCode(), ADDITIONAL_STRATEGIES_BUDGET_MS));
-                continue;
-            }
-            first = false;
             long started = System.nanoTime();
             try {
                 NetworkPlan plan = buildPlan(strategy, ingest, existing, geometry, oksPoints, 0);
